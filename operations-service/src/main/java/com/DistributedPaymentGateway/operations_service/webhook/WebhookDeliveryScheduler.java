@@ -8,6 +8,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -43,6 +44,7 @@ public class WebhookDeliveryScheduler {
     private int pollBatchSize = 100;
 
     @Scheduled(fixedDelay = 1000)
+    @SchedulerLock(name = "operations-service-webhook-delivery-poll-and-deliver", lockAtMostFor = "10s", lockAtLeastFor = "1s")
     public void pollAndDeliver() {
         Set<UUID> due = retryQueue.pollDue(pollBatchSize);
         if (due.isEmpty()) {
@@ -58,6 +60,7 @@ public class WebhookDeliveryScheduler {
     // Its responsibility is to find all the item which are in PENDING state and are not yet present in the Redis queue
     // and put them in the redis queue
     @Scheduled(fixedDelay = 10000)
+    @SchedulerLock(name = "operations-service-webhook-reconcile-from-db", lockAtMostFor = "10s", lockAtLeastFor = "1s")
     public void reconcileFromDatabase(){
         LocalDateTime now = LocalDateTime.now();
         List<WebhookEvent> due = webhookEventRepository.findByStatusAndNextRetryAtBefore(WebhookEventStatus.PENDING, now);

@@ -6,6 +6,8 @@ import com.DistributedPaymentGateway.payment_service.gateway.PaymentAdapter;
 import com.DistributedPaymentGateway.payment_service.gateway.dto.PaymentRequest;
 import com.DistributedPaymentGateway.payment_service.gateway.dto.PaymentResult;
 import com.DistributedPaymentGateway.common_lib.dto.PaymentProcessorResponse;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -18,6 +20,8 @@ public class CardPaymentAdapter implements PaymentAdapter {
     private final VaultServiceClient vaultServiceClient;
 
     @Override
+    @CircuitBreaker(name = "vault-service")
+    @Retry(name = "vault-service")
     public PaymentResult initiate(PaymentRequest request){
         // Read token generated during card tokenization.
         String token = (String) request.methodDetails().get("token");

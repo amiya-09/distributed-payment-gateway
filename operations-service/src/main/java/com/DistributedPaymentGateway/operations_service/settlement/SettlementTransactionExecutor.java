@@ -39,15 +39,14 @@ public class SettlementTransactionExecutor {
     private final SettlementPaymentRepository settlementPaymentRepository;
     private final BankTransferProcessor bankTransferProcessor;
     private final OutboxEventPublisher outboxEventPublisher;
-    private final MerchantServiceClient merchantServiceClient;
-    private final PaymentServiceClient paymentServiceClient;
+    private final SettlementIntegrationGateway settlementIntegrationGateway;
 
     @Transactional
     public void processForMerchant(UUID merchantId, LocalDate settlementDate) {
 
         log.info("Processing settlement for merchantId: {}, settlementDate: {}", merchantId, settlementDate);
         // Implement the logic to process settlement for the given merchant and date.
-        List<PaymentSettlementView> unsettledPayments = paymentServiceClient.findUnsettledCaptured(merchantId);
+        List<PaymentSettlementView> unsettledPayments = settlementIntegrationGateway.findUnsettledCaptured(merchantId);
         if (unsettledPayments.isEmpty()) return;
 
         log.info("Processing {} unsettled payments for merchantId: {}, settlementDate: {}", unsettledPayments.size(), merchantId, settlementDate);
@@ -86,7 +85,7 @@ public class SettlementTransactionExecutor {
             }
             settlementPaymentRepository.saveAll(links);
 
-            SettlementBankDetails settlementBankDetails = merchantServiceClient.getSettlementBankDetails(merchantId);
+            SettlementBankDetails settlementBankDetails = settlementIntegrationGateway.getSettlementBankDetails(merchantId);
 
             // call the bank transfer service to transfer net amount to merchant settlement bank details
             BankTransferResult bankTransferResult = bankTransferProcessor.initiate(settlement.getId(), merchantId,
@@ -123,7 +122,7 @@ public class SettlementTransactionExecutor {
                     .map(SettlementPayment::getId)
                     .map(SettlementPaymentId::getPaymentId)
                     .toList();
-            paymentServiceClient.markSettled(paymentIds);
+            settlementIntegrationGateway.markSettled(paymentIds);
 
             log.info("Settlement processed successfully, settlement id: {}", settlement.getId());
             outboxEventPublisher.publish(EventAggregateType.SETTLEMENT, settlementId,

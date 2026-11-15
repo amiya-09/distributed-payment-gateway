@@ -18,6 +18,8 @@ import com.DistributedPaymentGateway.payment_service.outbox.OutboxEventPublisher
 import com.DistributedPaymentGateway.payment_service.repository.OrderRepository;
 import com.DistributedPaymentGateway.payment_service.repository.PaymentRepository;
 import com.DistributedPaymentGateway.payment_service.service.OrderService;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +48,8 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
+    @CircuitBreaker(name = "merchant-service")
+    @Retry(name = "merchant-service")
     public OrderResponse createOrder(UUID merchantId, CreateOrderRequest orderRequest) {
         // If merchant sends a receipt, enforce uniqueness per merchant.
         if(orderRequest.receipt() != null && orderRepository.existsByMerchantIdAndReceipt(merchantId, orderRequest.receipt())){
