@@ -17,6 +17,7 @@ import com.DistributedPaymentGateway.payment_service.mapper.PaymentMapper;
 import com.DistributedPaymentGateway.payment_service.outbox.OutboxEventPublisher;
 import com.DistributedPaymentGateway.payment_service.repository.OrderRepository;
 import com.DistributedPaymentGateway.payment_service.repository.PaymentRepository;
+import com.DistributedPaymentGateway.payment_service.saga.PaymentAuthorizationRecorder;
 import com.DistributedPaymentGateway.payment_service.service.PaymentService;
 import com.DistributedPaymentGateway.payment_service.statemachine.PaymentTransitionService;
 import lombok.RequiredArgsConstructor;
@@ -37,68 +38,25 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentMapper paymentMapper;
     private final PaymentTransitionService paymentTransitionService;
     private final OutboxEventPublisher eventPublisher;
+    private final PaymentAuthorizationRecorder paymentAuthorizationRecorder;
 
     @Override
-    @Transactional
     // Repeatable_Read -- It does not allow another thread to update something which one thread is trying to update
     public PaymentResponse initiate(UUID merchantId, PaymentInitRequest request) {
-//        OrderRecord order = orderRepository.findByIdAndMerchantId(request.orderId(), merchantId)
-//                .orElseThrow(() -> new ResourceNotFoundException("Order" , request.orderId()));
 
-        OrderRecord order = orderRepository.findByIdAndMerchantIdForUpdate(request.orderId(), merchantId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order" , request.orderId()));
-
-        // Validate that the order is currently eligible for payment initiation.
-        if(order.getOrderStatus() != OrderStatus.CREATED && order.getOrderStatus() != OrderStatus.ATTEMPTED){
-            throw new BusinessRuleViolationException("ORDER_NOT_PAYBLE",
-                    "Order is not in valid state for payment initiation. Current status: "+ order.getOrderStatus());
-        }
-
-        order.setOrderStatus(OrderStatus.ATTEMPTED);
-        order.setAttempts(order.getAttempts() + 1);
-
-        Payment payment = Payment.builder()
-                .order(order)
-                .merchantId(merchantId)
-                .amount(order.getAmount())
-                .status(PaymentStatus.CREATED)
-                .method(request.method())
-                .idempotencyKey(UUID.randomUUID().toString())
-                .methodDetails(request.methodDetails())
-                .build();
-        payment = paymentRepository.save(payment);
+        Payment payment = paymentAuthorizationRecorder.recordPayment(merchantId, request);
 
         PaymentRequest paymentRequest = new PaymentRequest(payment.getId(), request.orderId(),
-                merchantId, order.getAmount(), request.method(), request.methodDetails());
+                merchantId, payment.getAmount(), request.method(), request.methodDetails());
 
-        paymentTransitionService.apply(payment, PaymentEvent.AUTHORIZE_ATTEMPT);
-        PaymentResult result = paymentGatewayRouter.initiate(paymentRequest);
-
-        switch (result) {
-            case PaymentResult.Pending pending -> payment.setProcessorReference(pending.registrationRef());
-            case PaymentResult.Failure failure -> {
-//                payment.setStatus(PaymentStatus.FAILED);
-                paymentTransitionService.apply(payment, PaymentEvent.AUTHORIZE_FAIL);
-                payment.setErrorCode(failure.errorCode());
-                payment.setErrorDescription(failure.errorDescription());
-            }
-            case PaymentResult.Success success -> {
-                log.warn("Invalid State");
-                return null;
-            }
+        PaymentResult result;
+        try {
+            result = paymentGatewayRouter.initiate(paymentRequest);
+        } catch (Exception e) {
+            return paymentAuthorizationRecorder.compensateAuthorizationFailure(payment.getId(), "GATEWAY_ERROR", e.getMessage());
         }
-        payment =  paymentRepository.save(payment);
-        orderRepository.save(order);
-        eventPublisher.publish(EventAggregateType.PAYMENT, payment.getId(), "PAYMENT_CREATED",
-                OutboxEventPublisher.payload("orderId", order.getId().toString(),
-                        "paymentId", payment.getId().toString(),
-                        "merchantId", merchantId.toString(),
-                        "paymentStatus", payment.getStatus().name(),
-                        "amountUnits", order.getAmount().getAmountUnits(),
-                        "amountCurrency", order.getAmount().getCurrency(),
-                        "paymentMethod", payment.getMethod())
-        );
-        return paymentMapper.toPaymentResponse(payment);
+
+        return paymentAuthorizationRecorder.applyGatewayResult(payment.getId(), result);
     }
 
     @Override
