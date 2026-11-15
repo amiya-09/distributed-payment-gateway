@@ -8,6 +8,7 @@ import com.DistributedPaymentGateway.payment_service.repository.PaymentRepositor
 import com.DistributedPaymentGateway.payment_service.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -24,7 +25,7 @@ public class BankCallbackSimulator {
     private final PaymentService paymentService;
     private final SimulatorConfig simulatorConfig;
 
-    // @Scheduled(fixedDelayString = "${payment.simulator.poll-interval-ms:5000}")
+    @Scheduled(fixedDelayString = "${payment.simulator.poll-interval-ms:5000}")
     // Runs at a fixed delay configured via properties.
     // Default poll interval is 5000 ms (5 seconds).
     public void processCallbacks() {
