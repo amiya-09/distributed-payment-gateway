@@ -1,0 +1,14 @@
+# OS / IDE
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Build output
+target/
+
+# Spring Initializr boilerplate
+HELP.md
+
+# Local-only config containing credentials (config server git backend)
+config-service/src/main/resources/application.yaml
