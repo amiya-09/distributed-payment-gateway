@@ -42,9 +42,17 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     // Repeatable_Read -- It does not allow another thread to update something which one thread is trying to update
-    public PaymentResponse initiate(UUID merchantId, PaymentInitRequest request) {
+    public PaymentResponse initiate(UUID merchantId, PaymentInitRequest request, String idempotencyKey) {
 
-        Payment payment = paymentAuthorizationRecorder.recordPayment(merchantId, request);
+        if(idempotencyKey != null){
+            var existing = paymentAuthorizationRecorder.findExistingAttempt(merchantId, idempotencyKey);
+            if(existing.isPresent()){
+                log.info("Idempotency replay for paymentId: {}", existing.get().id());
+                return existing.get();
+            }
+        }
+
+        Payment payment = paymentAuthorizationRecorder.recordPayment(merchantId, request, idempotencyKey);
 
         PaymentRequest paymentRequest = new PaymentRequest(payment.getId(), request.orderId(),
                 merchantId, payment.getAmount(), request.method(), request.methodDetails());
