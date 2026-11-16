@@ -1,5 +1,6 @@
 package com.DistributedPaymentGateway.payment_service.gateway.adapter;
 
+import com.DistributedPaymentGateway.common_lib.dto.PaymentProcessorRequest;
 import com.DistributedPaymentGateway.common_lib.enums.PaymentMethod;
 import com.DistributedPaymentGateway.payment_service.gateway.PaymentAdapter;
 import com.DistributedPaymentGateway.payment_service.gateway.dto.PaymentRequest;
