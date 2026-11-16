@@ -12,3 +12,6 @@ HELP.md
 
 # Local-only config containing credentials (config server git backend)
 config-service/src/main/resources/application.yaml
+
+# Kubernetes secrets
+k8s/k8s-secrets.env
