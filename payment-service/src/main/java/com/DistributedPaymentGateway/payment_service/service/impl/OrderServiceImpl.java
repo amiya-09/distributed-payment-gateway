@@ -6,7 +6,7 @@ import com.DistributedPaymentGateway.common_lib.enums.OrderStatus;
 import com.DistributedPaymentGateway.common_lib.exception.BusinessRuleViolationException;
 import com.DistributedPaymentGateway.common_lib.exception.DuplicateResourceException;
 import com.DistributedPaymentGateway.common_lib.exception.ResourceNotFoundException;
-import com.DistributedPaymentGateway.payment_service.client.CustomerServiceClient;
+import com.DistributedPaymentGateway.payment_service.client.CustomerServiceGateway;
 import com.DistributedPaymentGateway.payment_service.dto.request.CreateOrderRequest;
 import com.DistributedPaymentGateway.payment_service.dto.response.OrderResponse;
 import com.DistributedPaymentGateway.payment_service.dto.response.PaymentResponse;
@@ -18,8 +18,6 @@ import com.DistributedPaymentGateway.payment_service.outbox.OutboxEventPublisher
 import com.DistributedPaymentGateway.payment_service.repository.OrderRepository;
 import com.DistributedPaymentGateway.payment_service.repository.PaymentRepository;
 import com.DistributedPaymentGateway.payment_service.service.OrderService;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,14 +42,12 @@ public class OrderServiceImpl implements OrderService {
     private final PaymentRepository paymentRepository;
     private final PaymentMapper paymentMapper;
     private final OrderMapper orderMapper;
-    private final CustomerServiceClient customerServiceClient;
+    private final CustomerServiceGateway customerServiceGateway;
     private final OutboxEventPublisher eventPublisher;
     private final OrderPersistenceService orderPersistenceService;
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    @CircuitBreaker(name = "merchant-service")
-    @Retry(name = "merchant-service")
     public OrderResponse createOrder(UUID merchantId, CreateOrderRequest orderRequest) {
         // If merchant sends a receipt, enforce uniqueness per merchant.
         if(orderRequest.receipt() != null && orderRepository.existsByMerchantIdAndReceipt(merchantId, orderRequest.receipt())){
@@ -61,7 +57,7 @@ public class OrderServiceImpl implements OrderService {
 
         UUID customerId = null;
         if(orderRequest.customer() != null){
-            customerId = customerServiceClient.findOrCreate(new FindOrCreateCustomerRequest(
+            customerId = customerServiceGateway.findOrCreate(new FindOrCreateCustomerRequest(
                     merchantId,
                     orderRequest.customer().email(),
                     orderRequest.customer().name(),
