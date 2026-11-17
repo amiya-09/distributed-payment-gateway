@@ -10,11 +10,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
+
 
 @Slf4j
 @Component
@@ -22,11 +26,14 @@ import java.util.Map;
 public class ApiKeyAuthHandler {
 
     public static final String BASIC_PREFIX = "Basic ";
+    private static final String SECRET_VERIFY_PREFIX = "apikey:secret-verified:";
+    private static final Duration SECRET_VERIFY_TTL = Duration.ofSeconds(30);
     private static final BCryptPasswordEncoder BCRYPT = new BCryptPasswordEncoder();
 
     private final ApiKeyLookupClient apiKeyLookupClient;
     private final ApiKeyCache apiKeyCache;
     private final RateLimiter rateLimiter;
+    private final StringRedisTemplate stringRedisTemplate;
 
     @Value("${app.rate-limit.use-case.api-key.requests-per-minute:60}")
     private Integer requestsPerMinute;
@@ -74,13 +81,40 @@ public class ApiKeyAuthHandler {
     }
 
     private boolean validateApiKey(ApiKeyCacheEntry apiKey, String rawSecret) {
-        log.debug("Validating API Key: {}", apiKey.keyId());
-        if(BCRYPT.matches(rawSecret, apiKey.keySecretHash())){
-            return true;
+
+        String cacheKey = SECRET_VERIFY_PREFIX + apiKey.keyId() + ":" + apiKey.keySecretHash() + ":" + sha256(rawSecret);
+
+        try {
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(cacheKey))) {
+                return true;
+            }
+        } catch (Exception e) {
+            log.warn("Error occurred while checking API key in Redis: {}", cacheKey, e);
         }
-        return apiKey.isInGracePeriod()
+
+        boolean matches = BCRYPT.matches(rawSecret, apiKey.keySecretHash())
+                || (apiKey.isInGracePeriod()
                 && apiKey.previousKeySecretHash() != null
-                && BCRYPT.matches(rawSecret, apiKey.previousKeySecretHash());
+                && BCRYPT.matches(rawSecret, apiKey.previousKeySecretHash()));
+
+        if (matches) {
+            try {
+                stringRedisTemplate.opsForValue().set(cacheKey, "true", SECRET_VERIFY_TTL);
+            } catch (Exception e) {
+                log.warn("Error occurred while updating API key in Redis: {}", cacheKey, e);
+            }
+        }
+
+        return matches;
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (Exception e) {
+            throw new RuntimeException("Error occurred while hashing value", e);
+        }
     }
 
     private String[] decode(String authorizationHeader) {

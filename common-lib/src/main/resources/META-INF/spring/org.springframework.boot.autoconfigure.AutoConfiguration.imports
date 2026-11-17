@@ -4,3 +4,4 @@ com.DistributedPaymentGateway.common_lib.idempotency.SharedResilienceAutoConfigu
 com.DistributedPaymentGateway.common_lib.util.SharedSecurityAutoConfiguration
 com.DistributedPaymentGateway.common_lib.exception.SharedExceptionAutoConfiguration
 com.DistributedPaymentGateway.common_lib.web.SharedWebFilterAutoConfiguration
+com.DistributedPaymentGateway.common_lib.config.ZipkinConfig

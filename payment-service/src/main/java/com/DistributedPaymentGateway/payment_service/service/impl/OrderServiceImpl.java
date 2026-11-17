@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -45,9 +46,10 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final CustomerServiceClient customerServiceClient;
     private final OutboxEventPublisher eventPublisher;
+    private final OrderPersistenceService orderPersistenceService;
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @CircuitBreaker(name = "merchant-service")
     @Retry(name = "merchant-service")
     public OrderResponse createOrder(UUID merchantId, CreateOrderRequest orderRequest) {
@@ -66,36 +68,8 @@ public class OrderServiceImpl implements OrderService {
                     orderRequest.customer().phone()));
         }
 
-        OrderRecord orderRecord = OrderRecord.builder()
-                .receipt(orderRequest.receipt())
-                .amount(orderRequest.amount())
-                .notes(orderRequest.notes())
-                .merchantId(merchantId)
-                .customerId(customerId)
-                .orderStatus(OrderStatus.CREATED)
-                .expiresAt(orderRequest.expiresAt()!=null ? orderRequest.expiresAt() : LocalDateTime.now().plusMinutes(defaultOrderExpiryMinutes))
-                .build();
+        return orderPersistenceService.persist(merchantId, orderRequest, customerId, defaultOrderExpiryMinutes);
 
-        orderRecord = orderRepository.save(orderRecord);
-//        return new OrderResponse(
-//                orderRecord.getId(),
-//                orderRecord.getMerchantId(),
-//                orderRecord.getReceipt(),
-//                orderRecord.getAmount(),
-//                orderRecord.getOrderStatus(),
-//                orderRecord.getAttempts(),
-//                orderRecord.getNotes(),
-//                orderRecord.getExpiresAt(),
-//                null
-//        );
-        eventPublisher.publish(EventAggregateType.ORDER, orderRecord.getId(), "ORDER_CREATED",
-                OutboxEventPublisher.payload("orderId", orderRecord.getId(),
-                        "merchantId", merchantId.toString(),
-                        "orderStatus", orderRecord.getOrderStatus().name(),
-                        "amountUnits", orderRecord.getAmount().getAmountUnits(),
-                        "amountCurrency", orderRecord.getAmount().getCurrency())
-        );
-        return orderMapper.toOrderResponse(orderRecord);
     }
 
     @Override
