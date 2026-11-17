@@ -15,3 +15,6 @@ config-service/src/main/resources/application.yaml
 
 # Kubernetes secrets
 k8s/k8s-secrets.env
+
+# Generated JMeter API keys (contain secrets)
+k8s/api_keys.csv
